@@ -1,0 +1,11 @@
+# R/Rstudio files
+.Rhistory
+*.Rproj
+.Rproj.user
+
+# data files
+*.csv
+*.xlsx
+
+# image files
+*.png
