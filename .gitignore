@@ -7,5 +7,6 @@
 *.csv
 *.xlsx
 
-# image files
+# manuscript files
 *.png
+*.docx
