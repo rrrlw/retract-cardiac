@@ -190,10 +190,11 @@ g1 <- ggplot(df_med_auth, aes(x = Arbitrary_X, y = Freq)) +
   theme_bw() +
   theme(axis.text.x = element_blank(),
         axis.ticks.x = element_blank())
-g2 <- ggplot(df_med_auth, aes(x = Arbitrary_X, y = log10(Freq))) +
+g2 <- ggplot(df_med_auth, aes(x = Arbitrary_X, y = Freq)) +
   geom_point(shape = 20, size = 0.5) +
+  scale_y_continuous(trans = "log10") +
   xlab("Authors (Medicine)") +
-  ylab("log10(# papers)") +
+  ylab("# papers") +
   ggtitle("(B)") +
   theme_bw() +
   theme(axis.text.x = element_blank(),
@@ -206,10 +207,11 @@ g3 <- ggplot(df_card_auth, aes(x = Arbitrary_X, y = Freq)) +
   theme_bw() +
   theme(axis.text.x = element_blank(),
         axis.ticks.x = element_blank())
-g4 <- ggplot(df_card_auth, aes(x = Arbitrary_X, y = log10(Freq))) +
+g4 <- ggplot(df_card_auth, aes(x = Arbitrary_X, y = Freq)) +
   geom_point(shape = 20, size = 0.5) +
+  scale_y_continuous(trans = "log10") +
   xlab("Authors (Cardiology)") +
-  ylab("log10(# papers)") +
+  ylab("# papers") +
   ggtitle("(D)") +
   theme_bw() +
   theme(axis.text.x = element_blank(),
@@ -219,11 +221,11 @@ ggsave("auth-freq.png", plot = g, width = 6, height = 4)
 
 #####FIG: CATCH TIMES#####
 # histograms of med_retract vs cardio_retract catch times
-df_med <- data.frame(Group = "Med",
+df_med <- data.frame(Group = "Medicine",
                      Time = med_retract$CatchTime,
                      PubYear = year(med_retract$OriginalPaperDate)) %>%
   mutate(Years = Time / 365.25)
-df_card<- data.frame(Group = "Cardio",
+df_card<- data.frame(Group = "Cardiology",
                      Time = cardio_retract$CatchTime,
                      PubYear = year(cardio_retract$OriginalPaperDate)) %>%
   mutate(Years = Time / 365.25)
@@ -294,17 +296,34 @@ df_card %>%
 
 #####FIG: RETRACT TIME SERIES#####
 # time series of num pubs and num retracts each year
+medline_annual <- read_csv("medline_annual.csv")
 cardio_ts <- mutate(cardio_retract,
                     OrigYear = year(OriginalPaperDate),
                     RetractYear = year(RetractionDate)) %>%
   pivot_longer(cols = c(OrigYear, RetractYear),
                names_to = "Type")
+cardio_ts_norm <- cardio_ts %>%
+  select(value, Type) %>%
+  rename(Year = value) %>%
+  group_by(Year, Type) %>%
+  summarise(Total = n()) %>%
+  inner_join(medline_annual) %>%
+  mutate(Normalized = Total / Indexed_Num * 100000)
 ggplot(cardio_ts, aes(x = value, linetype = Type)) +
   geom_line(stat = "count") +
   xlab("Year") +
   ylab("Count") +
   scale_linetype_discrete(name = "Event",
-                       labels = c("Pub Date", "Retract Date")) +
+                       labels = c("Publication\nDate",
+                                  "Retraction\nDate")) +
+  theme_bw()
+ggplot(cardio_ts_norm, aes(x = Year, y = Normalized, linetype = Type)) +
+  geom_line() +
+  xlab("Year") +
+  ylab("Events per 100K articles") +
+  scale_linetype_discrete(name = "Event",
+                          labels = c("Publication\nDate",
+                                     "Retraction\nDate")) +
   theme_bw()
 ggsave("num-timeseries.png", width = 6, height = 2.25)
 
@@ -320,7 +339,7 @@ flowchart <- DiagrammeR::grViz("digraph{
   rw [label = 'Retraction Watch database\n (n = 22,740)']
   med [label = 'Medicine subject\n (n = 6,594)']
   cardio [label = 'Cardiology articles\n (n = 445)']
-  gscholar [label = 'Google Scholar\ncitation info']
+  gscholar [label = 'Bibliometric data\n(Google Scholar, n = 445)']
   final [label = 'Final dataset\n (n = 445)']
   
   # edge info
@@ -337,6 +356,8 @@ ggplot(cardio_retract_cite, aes(x = NumCitedBy)) +
   geom_histogram(bins = 20, color = "black", fill = "white") +
   xlab("# retracted article citations") +
   ylab("# articles") +
+#  scale_x_continuous(trans = "log10") +
+  scale_y_continuous(trans = "log10") +
   theme_bw()
 ggsave("cites-before-retract.png", width = 6, height = 2.25)
 
@@ -476,13 +497,13 @@ med_thresh <- quantile(as.numeric(med_reasons),
                        probs = 1 - 10 / length(med_reasons))
 
 # create and combine count DFs
-df_cardio <- data.frame(Group = "Cardiac",
+df_cardio <- data.frame(Group = "Cardiology",
                         Reason = names(cardio_reasons),
                         Count = as.numeric(cardio_reasons),
                         stringsAsFactors = FALSE) %>%
   mutate(Freq = Count / sum(Count)) %>%
   filter(Count > cardio_thresh)
-df_med <- data.frame(Group = "Med",
+df_med <- data.frame(Group = "Medicine",
                      Reason = names(med_reasons),
                      Count = as.numeric(med_reasons),
                      stringsAsFactors = FALSE) %>%
@@ -494,8 +515,8 @@ df_reasons <- rbind(df_cardio, df_med) %>%
 
 ggplot(df_reasons, aes(x = Reason, y = Freq, fill = Group)) +
   geom_bar(stat = "identity", position = "dodge", color = "black") +
-  scale_fill_manual(name = "Field", values = c("Cardiac" = "white",
-                                               "Med" = "grey60")) +
+  scale_fill_manual(name = "Field", values = c("Cardiology" = "white",
+                                               "Medicine" = "grey60")) +
   ylab("Frequency (%)") +
   theme_bw() +
   theme(axis.text.x = element_text(angle = 30, hjust = 1),
