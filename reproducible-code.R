@@ -10,6 +10,7 @@ library(xml2)
 library(rjson)
 library(magrittr)
 library(trend)
+library(cowplot)
 
 #####UTILITY FUNCTIONS#####
 year_split <- function(year_val) {
@@ -157,10 +158,11 @@ get_decade_bin <- function(y_val) {
              "pre-1980"
            } else if (year_val <= 85) {
              "1981-1985"
-           } else if (year_val <= 90) {
-             "1986-1990"
+           #} else if (year_val <= 90) {
+           #  "1986-1990"
+             # two five year intervals combined b/c only 2 data points in each before
            } else if (year_val <= 95) {
-             "1991-1995"
+             "1986-1995"
            } else if (year_val <= 100) {
              "1996-2000"
            } else if (year_val <= 105) {
@@ -181,7 +183,9 @@ cardio_fu_trend <- cardio_fu_trend %>%
   # remove ones w/ less than 10 years follow up (2011 or after)
   filter(year(OriginalPaperDate) < 16 | year(OriginalPaperDate) > 20) %>%
   # split into bins by decade of publication
-  mutate(Decade = get_decade_bin(year(OriginalPaperDate)))
+  mutate(Decade = get_decade_bin(year(OriginalPaperDate))) %>%
+  # correctly order factor levels
+  mutate(Decade = factor(Decade, levels = c("pre-1980", "1981-1985", "1986-1995", "1996-2000", "2001-2005", "2006-2010", "2011-2015")))
 
 # calculate mean delay by group
 fu_trend_results <- cardio_fu_trend %>%
@@ -190,11 +194,17 @@ fu_trend_results <- cardio_fu_trend %>%
             Median = median(Delay),
             SD = sd(Delay),
             Min_IQR = quantile(Delay, 0.25),
-            Max_IQR = quantile(Delay, 0.75)) %>%
-  mutate(Decade = factor(Decade, levels = c("pre-1980", "1981-1985", "1986-1990", "1991-1995", "1996-2000", "2001-2005", "2006-2010", "2011-2015")))
+            Max_IQR = quantile(Delay, 0.75))
+  
 ggplot(fu_trend_results, aes(x = Decade, y = Median)) +
   geom_bar(stat = "identity") +
   geom_errorbar(aes(ymin = Min_IQR, ymax = Max_IQR))
+
+ggplot(cardio_fu_trend, aes(x = Decade, y = Delay)) +
+  geom_boxplot() +
+  xlab("Original Publication Date Interval") +
+  ylab("Time to Retraction (years)") +
+  theme_cowplot()
 
 #####TIME TRENDS#####
 # test number of papers over time in medicine
