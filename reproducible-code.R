@@ -10,6 +10,7 @@ library(xml2)
 library(rjson)
 library(magrittr)
 library(trend)
+library(cowplot)
 
 #####UTILITY FUNCTIONS#####
 year_split <- function(year_val) {
@@ -39,7 +40,7 @@ test_year_trend <- function(date_col) {
   
   df_freq <- data.frame(Year = names(year_freq) %>% as.integer(),
                         Freq = year_freq %>% as.integer()) %>%
-    filter(Year >= 2000 & Year < 2020)
+    filter(Year >= 0 & Year < 20)
   
   mk.test(df_freq$Freq)
 }
@@ -109,7 +110,7 @@ retract <- read_csv("retractions.csv",
                     col_types = "cccccffccfccccccfcfc")
 
 # manually fill in missing value
-retract[retract$`Record ID` == "24122", ]$OriginalPaperDate <- "3/6/2018 0:00"
+retract[retract$`Record ID` == "24122", ]$OriginalPaperDate <- "3/6/18 0:00"
 
 # get overall medicine info (baseline)
 med_retract <- retract %>%
@@ -130,6 +131,80 @@ cardio_retract <- med_retract %>%
   filter(grepl(pattern = "(HSC) Medicine - Cardiology",
                x = med_retract$Subject,
                fixed = TRUE))
+
+#####CARDIO FOLLOW-UP TIME TREND#####
+cardio_fu_trend <- cardio_retract %>%
+  select(RetractionDate, OriginalPaperDate) %>%
+  mutate(RetractionDate = lubridate::as_date(RetractionDate),
+         OriginalPaperDate = lubridate::as_date(OriginalPaperDate))
+for (i in seq_len(nrow(cardio_fu_trend))) {
+  # add 100 to 21st century dates for appropriate interpretation
+  if (year(cardio_fu_trend$RetractionDate[i]) <= 21) {
+    cardio_fu_trend$RetractionDate[i] <- cardio_fu_trend$RetractionDate[i] + 365.25 * 100
+  }
+  
+  if (year(cardio_fu_trend$OriginalPaperDate[i]) <= 21) {
+    cardio_fu_trend$OriginalPaperDate[i] <- cardio_fu_trend$OriginalPaperDate[i] + 365.25 * 100
+  }
+}
+
+get_decade_bin <- function(y_val) {
+  y_val <- as.numeric(y_val)
+  vapply(X = y_val,
+         FUN.VALUE = character(1),
+         USE.NAMES = FALSE,
+         FUN = function(year_val) {
+           if (year_val <= 80) {
+             "pre-1980"
+           } else if (year_val <= 85) {
+             "1981-1985"
+           #} else if (year_val <= 90) {
+           #  "1986-1990"
+             # two five year intervals combined b/c only 2 data points in each before
+           } else if (year_val <= 95) {
+             "1986-1995"
+           } else if (year_val <= 100) {
+             "1996-2000"
+           } else if (year_val <= 105) {
+             "2001-2005"
+           } else if (year_val <= 110) {
+             "2006-2010"
+           } else {
+             "2011-2015"
+           }
+         })
+}
+
+cardio_fu_trend <- cardio_fu_trend %>%
+  # calculate days between publication and retraction
+  mutate(Delay = as.numeric(RetractionDate - OriginalPaperDate) / 365) %>%
+  # remove ones retracted after more than 10 years
+  filter(Delay < 5) %>%
+  # remove ones w/ less than 10 years follow up (2011 or after)
+  filter(year(OriginalPaperDate) < 16 | year(OriginalPaperDate) > 20) %>%
+  # split into bins by decade of publication
+  mutate(Decade = get_decade_bin(year(OriginalPaperDate))) %>%
+  # correctly order factor levels
+  mutate(Decade = factor(Decade, levels = c("pre-1980", "1981-1985", "1986-1995", "1996-2000", "2001-2005", "2006-2010", "2011-2015")))
+
+# calculate mean delay by group
+fu_trend_results <- cardio_fu_trend %>%
+  group_by(Decade) %>%
+  summarise(Mean = mean(Delay),
+            Median = median(Delay),
+            SD = sd(Delay),
+            Min_IQR = quantile(Delay, 0.25),
+            Max_IQR = quantile(Delay, 0.75))
+  
+ggplot(fu_trend_results, aes(x = Decade, y = Median)) +
+  geom_bar(stat = "identity") +
+  geom_errorbar(aes(ymin = Min_IQR, ymax = Max_IQR))
+
+ggplot(cardio_fu_trend, aes(x = Decade, y = Delay)) +
+  geom_boxplot() +
+  xlab("Original Publication Date Interval") +
+  ylab("Time to Retraction (years)") +
+  theme_cowplot()
 
 #####TIME TRENDS#####
 # test number of papers over time in medicine
@@ -266,7 +341,7 @@ ks.test(df_med$Years, df_card$Years) %>%
 
 # Mann-Kendall test to check if catch time trend is downward for medicine and cardiology, respectively
 df_med %>%
-  filter(PubYear >= 2000 & PubYear < 2020) %>%
+  filter(PubYear >= 0 & PubYear < 20) %>%
   group_by(PubYear) %>%
   summarise(Median_CatchTime = median(Time)) %>%
   pull(Median_CatchTime) %>%
@@ -274,7 +349,7 @@ df_med %>%
   print()
 
 df_card %>%
-  filter(PubYear >= 2000 & PubYear < 2020) %>%
+  filter(PubYear >= 0 & PubYear < 20) %>%
   group_by(PubYear) %>%
   summarise(Median_CatchTime = median(Time)) %>%
   pull(Median_CatchTime) %>%
