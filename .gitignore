@@ -9,3 +9,6 @@
 # manuscript files
 *.png
 *.docx
+
+# R scripts (only markdown is shared)
+*.R

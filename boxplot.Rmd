@@ -1,0 +1,119 @@
+---
+title: "Reproducible boxplot"
+author: "Raoul R. Wadhwa, Chandruganesh Rasendran, Zoran B. Popovic, Steven E. Nissen, Milind Y. Desai"
+date: ""
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Purpose
+
+This Rmarkdown document shows the code that was used to generate the boxplot in [Wadhwa et al. _JAMA Network Open_. 2021; 4(7): e2118263](https://jamanetwork.com/journals/jamanetworkopen/fullarticle/2782170).
+By sharing the R code within this document and uploading the HTML output generated on our local machine, we can make the figure more reproducible without exposing the underlying dataset, which we do not have permission to share.
+This refers to the Retraction Watch dataset, which can be acquired via a request at the [Retraction Watch website](https://retractionwatch.com/).
+
+## Code and figure
+
+The code below assumes that the Retraction Watch dataset is saved in the working directory and is named `retractions.csv`.
+If the Retraction Watch format is preserved, the block below will generate the boxplot displayed in the [original paper](https://jamanetwork.com/journals/jamanetworkopen/fullarticle/2782170), albeit with formatting differences.
+
+```{r boxplot, fig.width=8, fig.height=4}
+# load libraries
+library(tidyverse)
+library(lubridate)
+library(cowplot)
+
+# utility functions
+get_decade_bin <- function(y_val) {
+  y_val <- as.numeric(y_val)
+  vapply(X = y_val,
+         FUN.VALUE = character(1),
+         USE.NAMES = FALSE,
+         FUN = function(year_val) {
+           if (year_val <= 1980) {
+             "pre-1980"
+           } else if (year_val <= 1985) {
+             "1981-1985"
+           #} else if (year_val <= 90) {
+           #  "1986-1990"
+             # two five year intervals combined b/c only 2 data points in each before
+           } else if (year_val <= 1995) {
+             "1986-1995"
+           } else if (year_val <= 2000) {
+             "1996-2000"
+           } else if (year_val <= 2005) {
+             "2001-2005"
+           } else if (year_val <= 2010) {
+             "2006-2010"
+           } else {
+             "2011-2015"
+           }
+         })
+}
+
+remove_time <- function(val) {
+  # remove everything after space
+  vapply(X = val,
+         FUN.VALUE = character(1),
+         FUN = function(curr) {
+           if (is.na(curr)) {
+             return(NA_character_)
+           }
+           
+           space_index <- as.numeric(regexpr(pattern = " ",
+                                             text = curr,
+                                             fixed = TRUE))[1]
+           
+           return(substr(curr, 1, space_index - 1))
+         }) -> ans
+  
+  names(ans) <- NULL
+  return(ans)
+}
+
+# input data
+retract <- read_csv("retractions.csv",
+                    col_types = "cccccffccfccccccfcfc")
+
+# manually fill in missing value
+retract[retract$`Record ID` == "24122", ]$OriginalPaperDate <- "3/6/18 0:00"
+
+# get info for cardiology articles
+cardio_retract <- retract %>%
+  # select only medicine-related articles
+  filter(grepl(pattern = "(HSC) Medicine - Cardiology",
+               x = retract$Subject,
+               fixed = TRUE)) %>%
+  # convert date columns to Date class
+  mutate(RetractionDate = as.Date(remove_time(RetractionDate),
+                                  format = "%m/%d/%Y"),
+         OriginalPaperDate = as.Date(remove_time(OriginalPaperDate),
+                                     format = "%m/%d/%Y"),
+         CatchTime = as.numeric(RetractionDate - OriginalPaperDate))
+
+# restructure to get follow-up time trends
+cardio_fu_trend <- cardio_retract %>%
+  select(RetractionDate, OriginalPaperDate) %>%
+  mutate(RetractionDate = lubridate::as_date(RetractionDate),
+         OriginalPaperDate = lubridate::as_date(OriginalPaperDate)) %>%
+  # calculate days between publication and retraction
+  mutate(Delay = as.numeric(RetractionDate - OriginalPaperDate) / 365) %>%
+  # remove ones retracted after more than 10 years
+  filter(Delay < 5) %>%
+  # remove ones w/ less than 10 years follow up (2011 or after)
+  filter(year(OriginalPaperDate) < 2016 | year(OriginalPaperDate) > 2020) %>%
+  # split into bins by decade of publication
+  mutate(Decade = get_decade_bin(year(OriginalPaperDate))) %>%
+  # correctly order factor levels
+  mutate(Decade = factor(Decade, levels = c("pre-1980", "1981-1985", "1986-1995", "1996-2000", "2001-2005", "2006-2010", "2011-2015")))
+
+# generate boxplot
+ggplot(cardio_fu_trend, aes(x = Decade, y = Delay)) +
+  geom_boxplot() +
+  xlab("Original Publication Date Interval") +
+  ylab("Time to Retraction (years)") +
+  theme_cowplot()
+```
